@@ -1,8 +1,10 @@
 import pygame
 import random
 import json
-from Race.client import Client
+from client import Client
 from menu import *
+import time
+import threading
 
 # TODO:
 #  menu
@@ -10,6 +12,12 @@ from menu import *
 #  group of sprites
 #  music
 #  voice phrases
+
+f = open('settings.json')
+params = json.load(f)
+HOST = params['HOST']
+PORT = params['PORT']
+NAME = params['NAME']
 
 
 class Car:
@@ -136,7 +144,6 @@ def menu():
     while running_menu:
         for event in pygame.event.get():
             if event.type == pygame.MOUSEBUTTONDOWN:
-                print(event.pos)
                 if b.collidepoint(event.pos):
                     game()
                 if c.collidepoint(event.pos):
@@ -202,6 +209,7 @@ def pause():
 
 client = None
 online = False
+X, Y = 0, 0
 
 CarGoRight0 = pygame.image.load('car13.png')
 CarGoFront0 = pygame.image.load('car12.png')
@@ -211,25 +219,57 @@ CarGoLeft0 = pygame.image.load('car11.png')
 def server_connect():
     try:
         global client, online
-        client = Client('192.168.0.173', 5555)
-        client.join_room()
+        client = Client(HOST, PORT)
+        client.set_name(NAME)
         online = True
         return True
     except ConnectionRefusedError:
-        print('aboba')
+        print('Connection Refused')
         return False
     except TimeoutError:
-        print('amoma')
+        print('Timeout Connection Trying')
         return False
+
+
+class WidgetRooms(PageObject):
+    def __init__(self, group):
+        super().__init__(group, pygame.surface.Surface((X * 0.4, Y * 0.6)))
+        self.image.set_colorkey('black')
+        self.rooms = list()
+
+    def reload(self):
+        self.rooms = client.get_rooms()
+        print(self.rooms)
+
+    def get_current_room(self):
+        if len(self.rooms) >= 1:
+            return self.rooms[0]
+
+    def next_room(self):
+        f_room = self.rooms[0]
+        self.rooms = self.rooms[1:]
+        self.rooms.append(f_room)
+        self.update()
+    
+    def update(self):
+        self.image.fill((0, 0, 0))
+        for i, room in enumerate(self.rooms):
+            if i * 40 >= self.image.get_height(): break
+            pygame.draw.rect(self.image, 'white', pygame.Rect(0, i * 40, X * 0.4, 40), width=1)
+            self.image.blit(pygame.font.SysFont('Arial', 12).render(f'NAME: {room["name"]}', 1, 'white'), (2, i * 40 + 1))
+            self.image.blit(pygame.font.SysFont('Arial', 12).render(f'PLAYERS: {room["current_players"]}/{room["max_players"]}', 1, 'white'), (2, i * 40 + 21))
+            if not i:
+                pygame.draw.ellipse(self.image, 'red', pygame.Rect(X * 0.37, i * 40 + 2, 36, 36))
+
 
 
 def main():
-    global client, online
+    global client, online, X, Y
     pygame.init()
 
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     clock = pygame.time.Clock()
-    FPS = 100
+    FPS = 40
     X, Y = pygame.display.get_window_size()
     is_running = True
     
@@ -238,44 +278,57 @@ def main():
     ExitButton = pygame.image.load('ExitButton.jpg')
     ExitButton = ExitButton.convert_alpha()
     ExitButton.set_colorkey('white')
+    UpdateButton = pygame.image.load('UpdateButton.png')
+    UpdateButton = UpdateButton.convert()
+    UpdateButton.set_colorkey('white')
+    Background_var = Background(pygame.image.load('Background.png'), (X, Y))
+    Road = pygame.image.load('Road.png')
+    Road = pygame.transform.scale(Road, (X, Y))
 
     # game process
     def process(screen):
         global CarGoLeft0, CarGoRight0, CarGoFront0
-        distance_render = 300
+
+        distance_render = 600
         screen.image.fill((0, 0, 0))
+        screen.image.blit(Road, (0, 0))
         K_UP, K_DOWN, K_LEFT, K_RIGHT = False, False, False, False
 
-        keys = pygame.key.get_pressed()
-        K_UP = keys[pygame.K_UP] or keys[pygame.K_w]
-        K_DOWN = keys[pygame.K_DOWN] or keys[pygame.K_s]
-        K_LEFT = keys[pygame.K_LEFT] or keys[pygame.K_a]
-        K_RIGHT = keys[pygame.K_RIGHT] or keys[pygame.K_d]
-        
         if online:
             data = client.get_data()
             me = data[0]
-            print(me)
-            for obj in data:
-                if distance_render > obj['length'] - me['length'] >= 0 or True:
+            for obj in sorted(data, key=lambda car: -car['length']):
+                if distance_render > obj['length'] - me['length'] >= -200:
                     if obj['is_go_right']: sprite = CarGoRight0
                     elif obj['is_go_left']: sprite = CarGoLeft0
                     else: sprite = CarGoFront0
 
                     k = distance_render - (obj['length'] - me['length'])
-                    aspect = distance_render / k
+                    aspect = k / distance_render
                     if aspect <= 0: continue
                     sprite = pygame.transform.scale(sprite, (sprite.get_width() * aspect, sprite.get_height() * aspect))
                     
                     screen.image.blit(sprite,
-                            (obj['pos_on_road'] * 300 * aspect + X * 0.5 - sprite.get_width() / 2, Y * 0.7 * aspect))
+                           (obj['pos_on_road'] * 400 * aspect + X * 0.5 - sprite.get_width() / 2, Y * 0.75 * max(aspect, 0.7)))
                     screen.image.blit(pygame.font.SysFont('Calibri', 12).render(obj['name'], 1, 'white'),
-                            (obj['pos_on_road'] * 300 + X * 0.5 - 30, Y * 0.7 * aspect + 60))
-            screen.image.blit(pygame.font.SysFont('Calibri', 20).render(str(obj['speed']), 1, 'black', 'white'), (0, Y * 0.8))
-            client.send_data({'up': K_UP, 'down': K_DOWN, 'left': K_LEFT, 'right': K_RIGHT})
+                          (obj['pos_on_road'] * 300 + X * 0.5 - 30, Y * 0.75 * aspect + 60))
+            screen.image.blit(pygame.font.SysFont('Calibri', 20).render(str(int(me['speed'])), 1, 'black', 'white'), (0, Y * 0.8))
+    
 
+    def send_data():
+        while True:
+            if client.room_uid is not None:
+                keys = pygame.key.get_pressed()
+                K_UP = keys[pygame.K_UP] or keys[pygame.K_w]
+                K_DOWN = keys[pygame.K_DOWN] or keys[pygame.K_s]
+                K_LEFT = keys[pygame.K_LEFT] or keys[pygame.K_a]
+                K_RIGHT = keys[pygame.K_RIGHT] or keys[pygame.K_d]
+
+                client.send_data({'up': K_UP, 'down': K_DOWN, 'left': K_LEFT, 'right': K_RIGHT})
+            yield
 
     
+    sending_data = send_data()
     pages = PageControl()
 
     menu = Page()
@@ -284,15 +337,31 @@ def main():
 
     Button(pages.get_current_page(), StartButton, target=lambda: pages.set_current_page('game')).set_geometry(X * 0.45, Y * 0.55, X * 0.1, Y * 0.1)
     Button(pages.get_current_page(), ExitButton, target=lambda: sys.exit()).set_geometry(X * 0.97, Y * 0.01, X * 0.02, Y * 0.02)
+    Button(pages.get_current_page(), StartButton, target=lambda: pages.set_current_page('rooms')).set_geometry(X * 0.45, Y * 0.67, X * 0.1, Y * 0.1)
 
     game = GamePage(process)
+    pages.add_page('game', game)
 
     game_window = pygame.sprite.Sprite(game)
     game_window.image = pygame.surface.Surface((X, Y))
+    game_window.image.set_colorkey((0, 0, 0))
     game_window.rect = game_window.image.get_rect()
+    Button(pages.get_page('game'), StartButton, target=lambda: pages.set_current_page('menu')).set_geometry(X * 0.97, Y * 0.01, X * 0.02, Y * 0.02)
     print(game_window.rect)
 
-    pages.add_page('game', game)
+    roomsw = Page()
+    pages.add_page('rooms', roomsw)
+        
+    rooms = WidgetRooms(roomsw)
+    rooms.move(X * 0.003, Y * 0.05)
+    Button(pages.get_page('rooms'), ExitButton, target=lambda: rooms.next_room()).set_geometry(500, 500, 50, 50)
+    Button(pages.get_page('rooms'), UpdateButton, target=lambda: rooms.reload()).set_geometry(X * 0.81, Y * 0.225, X * 0.04, Y * 0.04)
+    Button(pages.get_page('rooms'), StartButton, target=lambda: client.create_room()).set_geometry(X * 0.7, Y * 0.2, X * 0.1, Y * 0.1)
+    Button(pages.get_page('rooms'), StartButton, target=lambda: pages.set_current_page('menu')).set_geometry(X * 0.97, Y * 0.01, X * 0.02, Y * 0.02)
+    Button(pages.get_page('rooms'), StartButton, target=lambda: client.join_room(rooms.get_current_room()['room_uid']) if rooms.get_current_room() else 0).set_geometry(X * 0.7, Y * 0.32, X * 0.1, Y * 0.1)
+
+    pages.set_background(Background_var)
+    pages.get_page('game').set_background(None)
 
     print(pages.get_pages())
     
@@ -302,10 +371,16 @@ def main():
             pages.event_handler(e)
         pages.get_current_page().update()
         pages.get_current_page().draw(screen)
+        next(sending_data)
         clock.tick(FPS)
         pygame.display.flip()
 
 
 if __name__ == '__main__':
     server_connect()
-    main()
+    try:
+        main()
+    finally:
+        pygame.quit()
+        client.quit()
+

@@ -13,7 +13,8 @@ class Page(pg.sprite.AbstractGroup):
         if e.type == pg.MOUSEBUTTONDOWN:
             for button in self.sprites():
                 if button.rect.collidepoint(e.pos):
-                    button.click()
+                    if hasattr(button, 'click'):
+                        button.click()
 
     def set_background(self, sprite):
         self.background = sprite
@@ -77,7 +78,7 @@ class PageObject(pg.sprite.Sprite):
         self.resize(w, h)
         self.move(x, y)
 
-    def click(self, e):
+    def click(self, *args, **kwargs):
         pass
 
 
@@ -94,10 +95,10 @@ class Button(PageObject):
 
 
 class Background(pg.sprite.Sprite):
-    def __init__(self, image):
+    def __init__(self, image, size):
         super().__init__()
         self.image = image
-        self.image = pg.transform.scale(self.image, (800, 800))
+        self.image = pg.transform.scale(self.image, size)
         self.rect = self.image.get_rect()
 
     def update(self):
@@ -105,9 +106,9 @@ class Background(pg.sprite.Sprite):
 
 
 class DynamicalBackground(pg.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, size):
         super().__init__()
-        self.image = pg.surface.Surface((800, 800))
+        self.image = pg.surface.Surface(size)
         self.rect = self.image.get_rect()
         self.count = 0
         self.FPS = 1000
@@ -127,9 +128,6 @@ class GamePage(Page):
     def __init__(self, main_process):
         super().__init__()
         self.main_process = main_process
-
-    def event_handler(self, e):
-        pass
 
     def update(self):
         self.main_process(self.sprites()[0])
