@@ -61,7 +61,7 @@ class PageControl(object):
         return self.queue
 
 
-class PageObject(pg.sprite.Sprite)
+class PageObject(pg.sprite.Sprite):
     def __init__(self, page, image):
         super().__init__(page)
         self.image = image
