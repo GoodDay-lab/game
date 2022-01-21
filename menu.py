@@ -61,7 +61,7 @@ class PageControl(object):
         return self.queue
 
 
-class PageObject(pg.sprite.Sprite):
+class PageObject(pg.sprite.Sprite)
     def __init__(self, page, image):
         super().__init__(page)
         self.image = image
@@ -71,7 +71,7 @@ class PageObject(pg.sprite.Sprite):
         self.rect.x, self.rect.y = x, y
 
     def resize(self, w, h):
-        self.image = pg.transform.scale(self.image, (w, h))
+        self.image = pg.transform.scale(self.image, (int(w), int(h)))
         self.rect = self.image.get_rect()
 
     def set_geometry(self, x, y, w, h):
